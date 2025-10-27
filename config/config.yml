@@ -1,5 +1,7 @@
 server:
   port: 8080
-  target: "http://example.com"
+  backends:
+    - "http://localhost:9001"
+    - "http://localhost:9002"
 logging:
   level: "info"

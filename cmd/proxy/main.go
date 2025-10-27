@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"proxy-web-go/internal/config"
-	"proxy-web-go/internal/logger"
-	"proxy-web-go/internal/middleware"
-	"proxy-web-go/internal/proxy"
+	"web-proxy-go/internal/config"
+	"web-proxy-go/internal/logger"
+	"web-proxy-go/internal/middleware"
+	"web-proxy-go/internal/proxy"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -18,10 +18,11 @@ func main() {
 	logger.InitLogger(cfg.Logging.Level)
 	defer logger.Log.Sync()
 
-	proxyHandler, err := proxy.NewProxy(cfg.Server.Target)
-	if err != nil {
-		logger.Log.Fatal("Erreur création proxy", zap.Error(err))
-	}
+	// LoadBalancer
+	lb := proxy.NewLoadBalancer(cfg.Server.Backends)
+
+	// Création du proxy (plus d'erreur, une seule valeur)
+	proxyHandler := proxy.NewProxy(lb)
 
 	// Chaîne de middlewares
 	handler := middleware.RecoveryMiddleware(
@@ -32,9 +33,11 @@ func main() {
 		),
 	)
 
+	// Routes
 	http.Handle("/", handler)
 	http.Handle("/metrics", promhttp.Handler())
 
+	// Démarrage serveur
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	logger.Log.Info("Proxy démarré", zap.String("addr", addr))
 

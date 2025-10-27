@@ -5,18 +5,36 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
-	"proxy-web-go/internal/logger"
+	"web-proxy-go/internal/logger"
 )
 
-func NewProxy(target string) (*httputil.ReverseProxy, error) {
-	urlTarget, err := url.Parse(target)
-	if err != nil {
-		return nil, err
-	}
+type LoadBalancer struct {
+	backends []*url.URL
+	index    uint64
+}
 
+func NewLoadBalancer(backendURLs []string) *LoadBalancer {
+	backends := make([]*url.URL, len(backendURLs))
+	for i, b := range backendURLs {
+		u, err := url.Parse(b)
+		if err != nil {
+			logger.Log.Fatal("Invalid backend URL", zap.String("backend", b), zap.Error(err))
+		}
+		backends[i] = u
+	}
+	return &LoadBalancer{backends: backends}
+}
+
+func (lb *LoadBalancer) NextBackend() *url.URL {
+	i := atomic.AddUint64(&lb.index, 1)
+	return lb.backends[i%uint64(len(lb.backends))]
+}
+
+func NewProxy(lb *LoadBalancer) *httputil.ReverseProxy {
 	transport := &http.Transport{
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   20,
@@ -27,37 +45,32 @@ func NewProxy(target string) (*httputil.ReverseProxy, error) {
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(urlTarget)
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.URL.Scheme = urlTarget.Scheme
-		req.URL.Host = urlTarget.Host
-		req.Host = urlTarget.Host
-		ctx := req.Context()
-		ctx = contextWithStartTime(ctx)
-		req = req.WithContext(ctx)
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			target := lb.NextBackend()
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.Host = target.Host
+			req = req.WithContext(contextWithStartTime(req.Context()))
+		},
+		Transport: transport,
+		ModifyResponse: func(res *http.Response) error {
+			start := getStartTime(res.Request.Context())
+			duration := time.Since(start)
+			logger.Log.Info("Requête proxy terminée",
+				zap.String("url", res.Request.URL.String()),
+				zap.Int("status", res.StatusCode),
+				zap.Duration("duration", duration),
+			)
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Log.Error("Erreur proxy", zap.Error(err))
+			http.Error(w, "Erreur proxy : "+err.Error(), http.StatusBadGateway)
+		},
 	}
 
-	proxy.Transport = transport
-
-	proxy.ModifyResponse = func(res *http.Response) error {
-		start := getStartTime(res.Request.Context())
-		duration := time.Since(start)
-		logger.Log.Info("requête proxy terminée",
-			zap.String("url", res.Request.URL.String()),
-			zap.Int("status", res.StatusCode),
-			zap.Duration("duration", duration),
-		)
-		return nil
-	}
-
-	proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, err error) {
-		logger.Log.Error("erreur proxy", zap.Error(err))
-		http.Error(writer, "Erreur proxy : "+err.Error(), http.StatusBadGateway)
-	}
-
-	return proxy, nil
+	return proxy
 }
 
 type ctxKey string

@@ -3,7 +3,7 @@ package middleware
 import (
 	"go.uber.org/zap"
 	"net/http"
-	"proxy-web-go/internal/logger"
+	"web-proxy-go/internal/logger"
 )
 
 func RecoveryMiddleware(next http.Handler) http.Handler {

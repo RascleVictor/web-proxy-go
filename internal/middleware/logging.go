@@ -3,8 +3,8 @@ package middleware
 import (
 	"go.uber.org/zap"
 	"net/http"
-	"proxy-web-go/internal/logger"
 	"time"
+	"web-proxy-go/internal/logger"
 )
 
 func LoggingMiddleware(next http.Handler) http.Handler {
