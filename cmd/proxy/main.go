@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"net/http"
-
 	"web-proxy-go/internal/config"
 	"web-proxy-go/internal/logger"
+	"web-proxy-go/internal/metrics"
 	"web-proxy-go/internal/middleware"
 	"web-proxy-go/internal/proxy"
 
@@ -18,17 +18,18 @@ func main() {
 	logger.InitLogger(cfg.Logging.Level)
 	defer logger.Log.Sync()
 
-	// LoadBalancer
+	metrics.Init()
 	lb := proxy.NewLoadBalancer(cfg.Server.Backends)
 
-	// Création du proxy (plus d'erreur, une seule valeur)
 	proxyHandler := proxy.NewProxy(lb)
 
-	// Chaîne de middlewares
-	handler := middleware.RecoveryMiddleware(
-		middleware.LoggingMiddleware(
-			middleware.MetricsMiddleware(
-				middleware.CORSMiddleware(proxyHandler),
+	// Compose les middlewares : RequestID en premier (au plus tôt), puis recovery, logging, metrics, CORS
+	handler := middleware.RequestIDMiddleware(
+		middleware.RecoveryMiddleware(
+			middleware.LoggingMiddleware(
+				middleware.MetricsMiddleware(
+					middleware.CORSMiddleware(proxyHandler),
+				),
 			),
 		),
 	)
