@@ -19,16 +19,25 @@ func main() {
 	defer logger.Log.Sync()
 
 	metrics.Init()
+
 	lb := proxy.NewLoadBalancer(cfg.Server.Backends)
 
 	proxyHandler := proxy.NewProxy(lb)
 
+	ipFilter := middleware.NewIPFilter(
+		[]string{"192.168.1.10"}, // whitelist
+		[]string{"10.0.0.5"},     // blacklist
+	)
+
 	// Compose les middlewares : RequestID en premier (au plus tôt), puis recovery, logging, metrics, CORS
 	handler := middleware.RequestIDMiddleware(
-		middleware.RecoveryMiddleware(
-			middleware.LoggingMiddleware(
-				middleware.MetricsMiddleware(
-					middleware.CORSMiddleware(proxyHandler),
+		ipFilter.Middleware(
+
+			middleware.RecoveryMiddleware(
+				middleware.LoggingMiddleware(
+					middleware.MetricsMiddleware(
+						middleware.CORSMiddleware(proxyHandler),
+					),
 				),
 			),
 		),
