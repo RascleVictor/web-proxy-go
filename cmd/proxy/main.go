@@ -33,11 +33,9 @@ func main() {
 		),
 	)
 
-	// Routes
 	http.Handle("/", handler)
 	http.Handle("/metrics", promhttp.Handler())
 
-	// Démarrage serveur
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	logger.Log.Info("Proxy démarré", zap.String("addr", addr))
 

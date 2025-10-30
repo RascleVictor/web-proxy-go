@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 	"web-proxy-go/internal/logger"
 )
 
+// --- Load Balancer ---
 type LoadBalancer struct {
 	backends []*url.URL
 	index    uint64
@@ -34,10 +36,11 @@ func (lb *LoadBalancer) NextBackend() *url.URL {
 	return lb.backends[i%uint64(len(lb.backends))]
 }
 
+// --- Reverse Proxy ---
 func NewProxy(lb *LoadBalancer) *httputil.ReverseProxy {
 	transport := &http.Transport{
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   20,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   50,
 		IdleConnTimeout:       90 * time.Second,
 		DisableCompression:    false,
 		TLSHandshakeTimeout:   10 * time.Second,
@@ -45,13 +48,19 @@ func NewProxy(lb *LoadBalancer) *httputil.ReverseProxy {
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 
+	_ = http2.ConfigureTransport(transport)
+
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			target := lb.NextBackend()
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
 			req.Host = target.Host
-			req = req.WithContext(contextWithStartTime(req.Context()))
+
+			ctx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+			defer cancel()
+
+			req = req.WithContext(contextWithStartTime(ctx))
 		},
 		Transport: transport,
 		ModifyResponse: func(res *http.Response) error {
@@ -73,6 +82,7 @@ func NewProxy(lb *LoadBalancer) *httputil.ReverseProxy {
 	return proxy
 }
 
+// --- Context pour calculer durée ---
 type ctxKey string
 
 const startTimeKey ctxKey = "startTime"
