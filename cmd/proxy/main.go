@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"time"
 	"web-proxy-go/internal/config"
 	"web-proxy-go/internal/logger"
 	"web-proxy-go/internal/metrics"
@@ -24,12 +25,15 @@ func main() {
 
 	proxyHandler := proxy.NewProxy(lb)
 
-	ipFilter := middleware.NewIPFilter(
-		[]string{"192.168.1.10"}, // whitelist
-		[]string{"10.0.0.5"},     // blacklist
+	ipFilter := middleware.NewDynamicIPFilter(
+		[]string{"127.0.0.1"},
+		100,
+		10,
+		1*time.Minute,
+		5*time.Minute,
+		30*time.Second,
 	)
 
-	// Compose les middlewares : RequestID en premier (au plus tôt), puis recovery, logging, metrics, CORS
 	handler := middleware.RequestIDMiddleware(
 		ipFilter.Middleware(
 
