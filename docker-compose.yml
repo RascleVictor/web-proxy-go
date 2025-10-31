@@ -1,0 +1,9 @@
+services:
+  proxy:
+    build: .
+    container_name: web-proxy-go
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/config.yml:/app/config.yml
+    restart: unless-stopped
